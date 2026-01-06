@@ -2,6 +2,7 @@ package frc.robot.subsystems;
 
 import static edu.wpi.first.units.Units.*;
 
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import com.ctre.phoenix6.SignalLogger;
@@ -9,6 +10,11 @@ import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.swerve.SwerveDrivetrainConstants;
 import com.ctre.phoenix6.swerve.SwerveModuleConstants;
 import com.ctre.phoenix6.swerve.SwerveRequest;
+import com.pathplanner.lib.auto.AutoBuilder;
+import com.pathplanner.lib.commands.PathfindingCommand;
+import com.pathplanner.lib.config.PIDConstants;
+import com.pathplanner.lib.config.RobotConfig;
+import com.pathplanner.lib.controllers.PPHolonomicDriveController;
 
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -40,6 +46,15 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     private static final Rotation2d kRedAlliancePerspectiveRotation = Rotation2d.k180deg;
     /* Keep track if we've ever applied the operator perspective before or not */
     private boolean m_hasAppliedOperatorPerspective = false;
+
+    // values from 2024 competition. Maybe should be tuned
+    private static final PIDConstants PATH_PLANNER_TRANSLATION_PID = new PIDConstants(5, 0, 0);
+    private static final PIDConstants PATH_PLANNER_ANGLE_PID       = new PIDConstants(5, 0, 0);
+
+    public static boolean isRedAlliance() {
+        Optional<Alliance> alliance = DriverStation.getAlliance();
+        return alliance.isPresent() && alliance.get() == Alliance.Red;
+    }
 
     /* Swerve requests to apply during SysId characterization */
     private final SwerveRequest.SysIdSwerveTranslation m_translationCharacterization = new SwerveRequest.SysIdSwerveTranslation();
@@ -285,4 +300,67 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     ) {
         super.addVisionMeasurement(visionRobotPoseMeters, Utils.fpgaToCurrentTime(timestampSeconds), visionMeasurementStdDevs);
     }
+
+
+    public void setupPathPlanner() {
+        try {
+            // Load the RobotConfig from the settings file created by GUI. 
+            // You should probably store this in your Constants file
+            RobotConfig config = RobotConfig.fromGUISettings();
+
+            // TODO: fix code to allow FF
+            // final boolean enableFeedforward = true;
+            // Configure AutoBuilder last
+            AutoBuilder.configure(
+                    // Robot pose supplier
+                    // this::getPose,
+                    () -> this.getState().Pose,
+                    // Method to reset odometry (will be called if your auto has a starting pose)
+                    // this::setPose,
+                    this::resetPose,
+                    // ChassisSpeeds supplier. MUST BE ROBOT RELATIVE
+                    // this::getRobotVelocity,
+                    () -> this.getState().Speeds,
+                    // Method that will drive the robot given ROBOT RELATIVE ChassisSpeeds. Also
+                    // optionally outputs individual module feedforwards
+                    (speedsRobotRelative, moduleFeedForwards) -> {
+                        // if (enableFeedforward) {
+                        //     m_swerveDrive.drive(
+                        //             speedsRobotRelative,
+                        //             m_swerveDrive.kinematics.toSwerveModuleStates(speedsRobotRelative),
+                        //             moduleFeedForwards.linearForces());
+                        // } else {
+                        // this.set
+                        // m_swerveDrive.setChassisSpeeds(speedsRobotRelative);
+
+                        this.applyRequest(() -> new SwerveRequest.RobotCentric().withVelocityX(speedsRobotRelative.vxMetersPerSecond)
+                            .withVelocityY(speedsRobotRelative.vxMetersPerSecond)
+                            .withRotationalRate(speedsRobotRelative.omegaRadiansPerSecond));
+                                // .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+                        // }
+                    },
+                    // PPHolonomicController is the built in path following controller for holonomic
+                    // drive trains
+                    new PPHolonomicDriveController(
+                            PATH_PLANNER_TRANSLATION_PID,
+                            PATH_PLANNER_ANGLE_PID),
+                    // The robot configuration
+                    config,
+                    // whether to flip directions for Red
+                    // () -> FieldConstants.isRedAlliance(),
+                    () -> isRedAlliance(),
+                    this
+            // Reference to this subsystem to set requirements
+            );
+
+        } catch (Exception e) {
+            // Handle exception as needed
+            e.printStackTrace();
+        }
+
+        // Preload PathPlanner Path finding
+        // IF USING CUSTOM PATHFINDER ADD BEFORE THIS LINE
+        PathfindingCommand.warmupCommand().schedule();
+    }
+
 }
