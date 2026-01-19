@@ -15,6 +15,8 @@ import com.pathplanner.lib.commands.PathfindingCommand;
 import com.pathplanner.lib.config.PIDConstants;
 import com.pathplanner.lib.config.RobotConfig;
 import com.pathplanner.lib.controllers.PPHolonomicDriveController;
+import com.pathplanner.lib.path.PathConstraints;
+import com.pathplanner.lib.path.PathPlannerPath;
 
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -55,6 +57,8 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         Optional<Alliance> alliance = DriverStation.getAlliance();
         return alliance.isPresent() && alliance.get() == Alliance.Red;
     }
+
+    private final SwerveRequest.ApplyRobotSpeeds autoRequest = new SwerveRequest.ApplyRobotSpeeds();
 
     /* Swerve requests to apply during SysId characterization */
     private final SwerveRequest.SysIdSwerveTranslation m_translationCharacterization = new SwerveRequest.SysIdSwerveTranslation();
@@ -332,11 +336,12 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
                         // } else {
                         // this.set
                         // m_swerveDrive.setChassisSpeeds(speedsRobotRelative);
+                        this.setControl(autoRequest.withSpeeds(speedsRobotRelative)); // Consumer of ChassisSpeeds to drive the robot
 
-                        this.applyRequest(() -> new SwerveRequest.RobotCentric().withVelocityX(speedsRobotRelative.vxMetersPerSecond)
-                            .withVelocityY(speedsRobotRelative.vxMetersPerSecond)
-                            .withRotationalRate(speedsRobotRelative.omegaRadiansPerSecond));
-                                // .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+                        // this.applyRequest(() -> new SwerveRequest.RobotCentric().withVelocityX(speedsRobotRelative.vxMetersPerSecond)
+                        //     .withVelocityY(speedsRobotRelative.vxMetersPerSecond)
+                        //     .withRotationalRate(speedsRobotRelative.omegaRadiansPerSecond));
+                        //         // .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
                         // }
                     },
                     // PPHolonomicController is the built in path following controller for holonomic
@@ -361,6 +366,32 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         // Preload PathPlanner Path finding
         // IF USING CUSTOM PATHFINDER ADD BEFORE THIS LINE
         PathfindingCommand.warmupCommand().schedule();
+    }
+
+    /**
+     * Get the path follower with events.
+     *
+     * @param path PathPlanner path.
+     * @return {@link AutoBuilder#followPath(PathPlannerPath)} path command.
+     */
+    public Command followPath(PathPlannerPath path) {
+        // Create a path following command using AutoBuilder. This will also trigger event markers.
+        return AutoBuilder.followPath(path);
+    }
+
+    public Command pathFindToPose(Pose2d targetPose, PathConstraints constraints) {
+        
+        return AutoBuilder.pathfindToPose(targetPose, constraints);
+    }
+
+    public static PathPlannerPath loadPath(String pathName) {
+        try {
+            PathPlannerPath path = PathPlannerPath.fromPathFile(pathName);
+            return path;
+        } catch (Exception e) {
+            DriverStation.reportError(String.format("Unable to load PP path %s", pathName), true);
+        }
+        return null;
     }
 
 }
